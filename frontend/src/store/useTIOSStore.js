@@ -1,0 +1,78 @@
+/**
+ * TIOS Global Store (Zustand)
+ *
+ * All capture data lives here in React memory for the session.
+ * Nothing is sent to a server or database.
+ * Images are saved to the user's local machine via browser download.
+ */
+
+import { create } from 'zustand';
+
+const DEFAULT_TELEMETRY = {
+  lat: 12.971891,  lon: 77.594562,
+  alt: 0,          relAlt: 0,
+  speed: 0,        climbRate: 0,   heading: 0,
+  roll: 0,         pitch: 0,       yaw: 0,
+  battery: 100,    voltage: 0,     current: 0,
+  maxTemp: 0,      minTemp: 0,     avgTemp: 0,
+  flightMode: 'UNKNOWN',
+  armed: false,
+  fixType: 0,      satellites: 0,
+  timestamp: null,
+};
+
+export const useTIOSStore = create((set, get) => ({
+
+  // ── Telemetry (updated live from Socket.io) ───────────────────────────────
+  telemetry: { ...DEFAULT_TELEMETRY },
+  flightPath: [], // Array of [lat, lon] points
+  updateTelemetry: (data) => set((s) => {
+    const newTelemetry = { ...s.telemetry, ...data };
+    const lastPoint = s.flightPath[s.flightPath.length - 1];
+    const newPoint = [newTelemetry.lat, newTelemetry.lon];
+
+    // Only add to path if moved more than ~0.5m (rough approximation for noise reduction)
+    const moved = !lastPoint || 
+      Math.abs(lastPoint[0] - newPoint[0]) > 0.000005 || 
+      Math.abs(lastPoint[1] - newPoint[1]) > 0.000005;
+
+    return { 
+      telemetry: newTelemetry,
+      flightPath: moved ? [...s.flightPath, newPoint] : s.flightPath
+    };
+  }),
+
+  // ── Connection status ─────────────────────────────────────────────────────
+  connected: false,
+  setConnected: (v) => set({ connected: v }),
+
+  // ── Mission info ──────────────────────────────────────────────────────────
+  missionId:   `INS-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-001`,
+  missionName: 'Inspection Mission',
+  operatorName: 'Field Operator',
+  setMissionId:    (v) => set({ missionId: v }),
+  setMissionName:  (v) => set({ missionName: v }),
+  setOperatorName: (v) => set({ operatorName: v }),
+
+  // ── Captures (stored in React memory only — no server/DB) ────────────────
+  captures: [],
+  addCapture:    (cap) => set((s) => ({ captures: [...s.captures, cap] })),
+  removeCapture: (id)  => set((s) => ({ captures: s.captures.filter((c) => c.id !== id) })),
+  clearCaptures: ()    => set({ captures: [] }),
+
+  // ── UI state ──────────────────────────────────────────────────────────────
+  activeTab: 'dashboard', // 'dashboard' or 'map'
+  feedsSwapped:    false,
+  selectedCapture: null,
+  setActiveTab: (tab) => set({ activeTab: tab }),
+  toggleFeedsSwapped:  ()  => set((s) => ({ feedsSwapped: !s.feedsSwapped })),
+  setSelectedCapture:  (id) => set({ selectedCapture: id }),
+
+  // ── Toast notifications ───────────────────────────────────────────────────
+  toasts: [],
+  addToast: (message, type = 'info') => {
+    const id = Date.now();
+    set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 2800);
+  },
+}));
